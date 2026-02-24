@@ -21,6 +21,27 @@ from aiter.ops.triton.quant.fused_mxfp4_quant import fused_dynamic_mxfp4_quant_m
 from aiter.utility import fp4_utils
 
 BLOCK_SIZE_M = 32
+import math
+from typing import Dict, Tuple
+
+_tmp_out_cache: Dict[Tuple[int, ...], torch.Tensor] = {}
+_tmp_out_cache: Dict[Tuple[int, int, int, str, int], torch.Tensor] = {}  
+_max_cache_size = 256 
+  
+def _get_tmp_out_cached(shape: Tuple[int, int, int],dtype: torch.dtype,device: torch.device) -> torch.Tensor:  
+    """单线程环境下的缓存实现"""  
+    key = (*shape, str(device), dtype.itemsize)  
+      
+    if key in _tmp_out_cache:  
+        return _tmp_out_cache[key]  
+      
+    if len(_tmp_out_cache) >= _max_cache_size:  
+        oldest_key = next(iter(_tmp_out_cache))  
+        del _tmp_out_cache[oldest_key]  
+      
+    buffer = torch.empty(shape, dtype=dtype, device=device)  
+    _tmp_out_cache[key] = buffer  
+    return buffer
 
 
 def moe_sorting(
@@ -1474,8 +1495,9 @@ def ck_moe_stage1(
     dtype=None,
 ):
     token_num = hidden_states.shape[0]
+    # After (persistent buffer, reuses allocation):
     tmp_out = (
-        torch.zeros(
+        _get_tmp_out_cached(
             (token_num, topk, w1.shape[1]), dtype=dtypes.fp32, device=out.device
         )
         if splitk > 1
