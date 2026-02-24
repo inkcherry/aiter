@@ -15,6 +15,9 @@ from aiter.ops.triton.utils.gemm_config_utils import compute_splitk_params
 
 _LOGGER = AiterTritonLogger()
 
+import logging
+
+logger = logging.getLogger(__name__)
 
 def gemm_a8w8_blockscale(
     x: torch.Tensor,
@@ -26,6 +29,7 @@ def gemm_a8w8_blockscale(
     config: Optional[dict] = None,
     skip_reduce: Optional[bool] = False,
 ):
+    # logger.info(f"gemm_a8w8_blockscale: {x.shape=}, {w.shape=}")
     """
     Computes 8 bit matrix multiplication Y = X @ W^T using block-wise quantization scales.
     Each block along K and N dimensions has independent scale factors for fine-grained quantization.
