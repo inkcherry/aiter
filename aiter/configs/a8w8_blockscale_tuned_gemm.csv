@@ -79,3 +79,5 @@ cu_num,M,N,K,libtype,kernelId,splitK,us,kernelName,tflops,bw,errRatio
 256,16384,7168,2304,cktile,11,0,371.4356,a8w8_blockscale_cktile_192x256x128_4x2x1_16x16x128_intrawave_0x1x0_1,1456.96,778.45,0.0
 256,20480,7168,256,cktile,10,0,125.313,a8w8_blockscale_cktile_128x128x128_2x2x1_16x16x128_intrawave_0x1x0_2,599.79,2399.43,0.0
 256,20480,7168,2304,cktile,11,0,470.5953,a8w8_blockscale_cktile_192x256x128_4x2x1_16x16x128_intrawave_0x1x0_1,1437.45,759.26,0.0
+256,4096,16384,7168,cktile,11,3,492.211,a8w8_blockscale_cktile_192x256x128_4x2x1_16x16x128_intrawave_0x1x0_1,1954.59,570.93,0.0
+256,8192,16384,7168,cktile,11,2,907.6119,a8w8_blockscale_cktile_192x256x128_4x2x1_16x16x128_intrawave_0x1x0_1,2120.01,489.85,0.0
