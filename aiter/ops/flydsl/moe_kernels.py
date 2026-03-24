@@ -68,7 +68,7 @@ def get_flydsl_stage2_kernels(
     is_fp4 = b_dtype == "fp4"
     tile_ns = [128, 256] if is_fp4 else [128]
     tile_ks = [256] if is_fp4 else [128]
-    tile_ms = [32, 64]
+    tile_ms = [32, 64, 128]
     modes = ["atomic", "reduce"]
 
     for tm in tile_ms:
@@ -532,7 +532,8 @@ def flydsl_moe_stage2(
             (token_num, model_dim), dtype=torch_out_dtype, device=inter_states.device
         )
     elif accumulate:
-        out.zero_()
+        # out.zero_()
+        pass
 
     dev = inter_states.device
     sw = (
