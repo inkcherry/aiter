@@ -671,10 +671,6 @@ def fused_dynamic_mxfp4_quant_moe_sort(
     num_rows: Optional[torch.Tensor] = None,
     group_size: int = 32,
 ) -> Tuple[torch.Tensor, torch.Tensor]:
-    token_num_quant_moe_sort_switch = [
-        8 * 256 / topk,  # stage1
-        8 * 1024 / topk,  # stage2
-    ]
     M, N = input.view(-1, input.shape[-1]).shape
     is_stage1 = M == token_num
     topk = 1 if is_stage1 else topk
@@ -684,11 +680,11 @@ def fused_dynamic_mxfp4_quant_moe_sort(
         dtype=dtypes.fp8_e8m0,
         device=input.device,
     )
-    if (
-        (is_stage1 and M <= token_num_quant_moe_sort_switch[0])
-        or (not is_stage1 and M <= token_num_quant_moe_sort_switch[1] * topk)
-        or group_size != 32
-    ):
+    # The fused HIP kernel `fused_dynamic_mxfp4_quant_moe_sort_hip` is faster
+    # than the split path (per_1x32_f4_quant_hip + mxfp4_moe_sort_hip) across
+    # all measured M sizes once persistent_mode is enabled in the kernel.
+    # Use the fused path whenever applicable (group_size == 32).
+    if group_size == 32:
         out = torch.empty(M, N // 2, dtype=dtypes.fp4x2, device=input.device)
         fused_dynamic_mxfp4_quant_moe_sort_hip(
             out,
