@@ -1804,7 +1804,7 @@ void fused_dynamic_mxfp4_quant_moe_sort_hip(
     TORCH_CHECK(block_m % sub_block_m == 0, __func__, " block_m is not divisible by sub_block_m");
     int tgs_per_block_m = block_m / sub_block_m;
     int num_blocks = (sorted_ids.size(0) + sub_block_m - 1) / sub_block_m;
-    const bool persistent_mode = false;
+    const bool persistent_mode = true;
     const int input_stride     = input.stride(-2);
 
     const at::hip::OptionalHIPGuardMasqueradingAsCUDA device_guard(device_of(input));
@@ -1958,7 +1958,7 @@ void mxfp4_moe_sort_hip(
 )
 {
     const int num_cu = get_num_cu_func();
-    const bool persistent_mode = false;
+    const bool persistent_mode = true;
     int topk = scale.numel() / ((cols + 31) / 32 * token_num);
  
     const at::hip::OptionalHIPGuardMasqueradingAsCUDA device_guard(device_of(scale));
