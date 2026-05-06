@@ -298,7 +298,6 @@ def c_shuffle_epilog(
 
     # ===================== Standard (non-split) path below =====================
 
-    # ---------------- Step 1: write C tile to LDS (row-major, fp16) ----------------
     tile_n_idx = arith.constant(int(tile_n), index=True)
     n_tile_base_v = n_tile_base
     col_base_local = n_tile_base_v + lane_mod_16  # index within [0,tile_n)
@@ -307,6 +306,54 @@ def c_shuffle_epilog(
         lds_row_offset * tile_n_idx if lds_row_offset is not None else None
     )
 
+    CShuffleNLane = int(cshuffle_nlane)
+    CShuffleMLane = int(cshuffle_mlane)
+    EVec = int(e_vec)
+
+    m_reps_shuffle = int(tile_m) // CShuffleMLane
+    n_reps_shuffle = int(tile_n) // (CShuffleNLane * EVec)
+
+    c_nlane = fx.Index(CShuffleNLane)
+    m_lane = tx // c_nlane
+    n_lane = tx % c_nlane
+    c_evec = fx.Index(EVec)
+
+    if frag_elem_type is None:
+        frag_elem_type = T.f16
+    vec_frag = T.vec(EVec, frag_elem_type)
+    bx_m_v = bx_m
+    by_n_v = by_n
+
+    # Team F r267: precompute row contexts before the C tile LDS write.
+    # For the production separate-LDS path these contexts read lds_tid, which is
+    # disjoint from lds_out. Keeping the post-write barrier still guarantees
+    # lds_out visibility before the shuffle-read, while the row context values
+    # can be live before the store loop needs them.
+    _precomputed_rows = []
+    for mr in range_constexpr(m_reps_shuffle):
+        row_base_m = arith.constant(mr * CShuffleMLane, index=True)
+        row_local = row_base_m + m_lane
+        row = bx_m_v + row_local
+
+        row_ctx_raw = (
+            precompute_row(row_local=row_local, row=row)
+            if precompute_row is not None
+            else None
+        )
+
+        row_ctx = row_ctx_raw
+        row_pred = None
+        if (
+            scf is not None
+            and row_ctx_raw is not None
+            and isinstance(row_ctx_raw, tuple)
+            and len(row_ctx_raw) == 2
+        ):
+            row_ctx, row_pred = row_ctx_raw
+
+        _precomputed_rows.append((row_local, row, row_ctx, row_pred))
+
+    # ---------------- Step 1: write C tile to LDS (row-major, fp16) ----------------
     def _write_row(mi: int, ii: int, row_in_tile, row):
         row_base_lds = row_in_tile * tile_n_idx
         if _lds_row_base_offset is not None:
@@ -337,53 +384,6 @@ def c_shuffle_epilog(
     gpu.barrier()
 
     # ---------------- Step 2: shuffle mapping + half2 store/atomic ----------------
-    CShuffleNLane = int(cshuffle_nlane)
-    CShuffleMLane = int(cshuffle_mlane)
-    EVec = int(e_vec)
-
-    m_reps_shuffle = int(tile_m) // CShuffleMLane
-    n_reps_shuffle = int(tile_n) // (CShuffleNLane * EVec)
-
-    c_nlane = fx.Index(CShuffleNLane)
-    m_lane = tx // c_nlane
-    n_lane = tx % c_nlane
-    c_evec = fx.Index(EVec)
-
-    if frag_elem_type is None:
-        frag_elem_type = T.f16
-    vec_frag = T.vec(EVec, frag_elem_type)
-    bx_m_v = bx_m
-    by_n_v = by_n
-
-    # Batch-precompute all row contexts (sorted_idx loads) before the store loop.
-    # This issues all buffer_load instructions upfront so the compiler can pipeline
-    # them instead of serializing each load with s_waitcnt vmcnt(0).
-    _precomputed_rows = []
-    for mr in range_constexpr(m_reps_shuffle):
-        row_base_m = arith.constant(mr * CShuffleMLane, index=True)
-        row_local = row_base_m + m_lane
-        row = bx_m_v + row_local
-
-        row_ctx_raw = (
-            precompute_row(row_local=row_local, row=row)
-            if precompute_row is not None
-            else None
-        )
-
-        # Optional row-level predicate: if `precompute_row` returns `(ctx, pred_i1)` and `scf`
-        # is provided, we can skip the entire N-loop for invalid rows (cheaper than per-store checks).
-        row_ctx = row_ctx_raw
-        row_pred = None
-        if (
-            scf is not None
-            and row_ctx_raw is not None
-            and isinstance(row_ctx_raw, tuple)
-            and len(row_ctx_raw) == 2
-        ):
-            row_ctx, row_pred = row_ctx_raw
-
-        _precomputed_rows.append((row_local, row, row_ctx, row_pred))
-
     # Now perform LDS reads and stores using the pre-fetched row contexts.
     for mr in range_constexpr(m_reps_shuffle):
         row_local, row, row_ctx, row_pred = _precomputed_rows[mr]
