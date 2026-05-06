@@ -177,6 +177,72 @@ def get_flydsl_stage2_kernels(
                                 **base_params,
                                 "persist": True,
                             }
+                            for wpe in (1, 2, 3, 4):
+                                kernels[f"{base_name}_persist_w{wpe}"] = {
+                                    **base_params,
+                                    "persist": True,
+                                    "waves_per_eu": wpe,
+                                }
+                            kernels[f"{base_name}_persist_async"] = {
+                                **base_params,
+                                "persist": True,
+                                "use_async_copy": True,
+                            }
+                            for wpe in (1, 2, 3, 4, 5, 6, 8):
+                                kernels[f"{base_name}_persist_async_w{wpe}"] = {
+                                    **base_params,
+                                    "persist": True,
+                                    "use_async_copy": True,
+                                    "waves_per_eu": wpe,
+                                }
+                            for gm in (2, 4):
+                                kernels[f"{base_name}_persist_async_gm{gm}"] = {
+                                    **base_params,
+                                    "persist": True,
+                                    "use_async_copy": True,
+                                    "group_size_m": gm,
+                                }
+                            for nt_val in (1, 2, 3):
+                                kernels[f"{base_name}_persist_async_w4_nt{nt_val}"] = {
+                                    **base_params,
+                                    "persist": True,
+                                    "use_async_copy": True,
+                                    "waves_per_eu": 4,
+                                    "w_nt": nt_val,
+                                }
+                            if mode == "atomic":
+                                for kb in (2, 4):
+                                    kernels[f"{base_name}_persist_async_w4_sk{kb}"] = {
+                                        **base_params,
+                                        "persist": True,
+                                        "use_async_copy": True,
+                                        "waves_per_eu": 4,
+                                        "k_batch": kb,
+                                    }
+                            for npb in (2, 4):
+                                kernels[f"{base_name}_persist_async_w4_npb{npb}"] = {
+                                    **base_params,
+                                    "persist": True,
+                                    "use_async_copy": True,
+                                    "waves_per_eu": 4,
+                                    "n_per_block": npb,
+                                }
+                            if base_name == "flydsl_moe2_afp4_wfp4_bf16_t64x128x256_atomic":
+                                for cum in (2, 3, 4, 6, 8):
+                                    kernels[f"{base_name}_persist_async_w4_cumul{cum}"] = {
+                                        **base_params,
+                                        "persist": True,
+                                        "use_async_copy": True,
+                                        "waves_per_eu": 4,
+                                        "cu_num_mul": cum,
+                                    }
+                                kernels[f"{base_name}_persist_async_w4"] = {
+                                    **base_params,
+                                    "persist": True,
+                                    "use_async_copy": True,
+                                    "waves_per_eu": 4,
+                                    "cu_num_mul": 3,
+                                }
     return kernels
 
 
@@ -278,6 +344,14 @@ def compile_flydsl_moe_stage2(
     accumulate: bool = True,
     persist_m: int = 1,
     sort_block_m: int = 0,
+    n_per_block: int = 1,
+    waves_per_eu: Optional[int] = None,
+    k_batch: int = 1,
+    group_size_m: int = 1,
+    npb_inner: int = 1,
+    use_async_copy: bool = False,
+    w_nt: int = 0,
+    cu_num_mul: int = 1,
     b_nt: int = 0,
     model_dim_pad: int = 0,
     inter_dim_pad: int = 0,
@@ -303,10 +377,16 @@ def compile_flydsl_moe_stage2(
             accumulate=accumulate,
             persist_m=persist_m,
             sort_block_m=sort_block_m,
-            b_nt=b_nt,
+            n_per_block=n_per_block,
+            waves_per_eu=waves_per_eu,
+            k_batch=k_batch,
+            group_size_m=group_size_m,
+            npb_inner=npb_inner,
+            use_async_copy=use_async_copy,
+            w_nt=w_nt,
+            cu_num_mul=cu_num_mul,
             model_dim_pad=model_dim_pad,
             inter_dim_pad=inter_dim_pad,
-            xcd_swizzle=xcd_swizzle,
             enable_bias=enable_bias,
         )
     else:
@@ -824,6 +904,14 @@ def flydsl_moe_stage2(
     sorted_weights: Optional[torch.Tensor] = None,
     sort_block_m: int = 0,
     persist: Optional[bool] = None,
+    n_per_block: int = 1,
+    waves_per_eu: Optional[int] = None,
+    k_batch: int = 1,
+    group_size_m: int = 1,
+    npb_inner: int = 1,
+    use_async_copy: bool = False,
+    w_nt: int = 0,
+    cu_num_mul: int = 1,
     b_nt: int = 0,
     model_dim_pad: int = 0,
     inter_dim_pad: int = 0,
@@ -951,6 +1039,14 @@ def flydsl_moe_stage2(
         accumulate=accumulate,
         persist_m=_persist_m,
         sort_block_m=sort_block_m,
+        n_per_block=n_per_block,
+        waves_per_eu=waves_per_eu,
+        k_batch=k_batch,
+        group_size_m=group_size_m,
+        npb_inner=npb_inner,
+        use_async_copy=use_async_copy,
+        w_nt=w_nt,
+        cu_num_mul=cu_num_mul,
         b_nt=b_nt,
         model_dim_pad=model_dim_pad,
         inter_dim_pad=inter_dim_pad,
