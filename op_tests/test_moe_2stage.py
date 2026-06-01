@@ -79,6 +79,9 @@ def test_fmoe(
     if get_gfx() not in ["gfx950"] and qType in [aiter.QuantType.per_1x32]:
         return
     torch_quant = aiter.get_torch_quant(qType)
+    import os as _os
+    torch.manual_seed(int(_os.environ.get("UT_SEED", "0")))
+    torch.cuda.manual_seed_all(int(_os.environ.get("UT_SEED", "0")))
     input = torch.randn((token, model_dim), dtype=dtype)
     if use_g1u1:
         w1 = torch.randn((E, inter_dim * 2, model_dim), dtype=dtype)
@@ -366,6 +369,24 @@ def test_fmoe(
         num_iters=5,
         num_warmup=2,
     )
+    has_nan = out2_ck.isnan().any().item()
+    if has_nan:
+        logging.error("output contains NaN!")
+
+    _dump = os.environ.get("UT_DUMP_OUT")
+    if _dump:
+        torch.save(
+            {
+                "out2_ck": out2_ck.detach().float().cpu(),
+                "out2_ref": out2_ref.detach().float().cpu(),
+                "token": int(token),
+                "model_dim": int(model_dim),
+                "inter_dim": int(inter_dim),
+                "has_nan": bool(has_nan),
+            },
+            f"{_dump}.m{int(token)}.pt",
+        )
+
     err = checkAllclose(
         out2_ref,
         out2_ck,
@@ -384,9 +405,12 @@ def test_fmoe(
             f"logits_diff: {logits_diff} is too large, please check the implementation"
         )
     if strict_accuracy:
+        assert not has_nan, f"accuracy check failed: output contains NaN"
         assert not (
             err != 0 and logits_diff > 0.01
         ), f"accuracy check failed: checkAllclose err={err}, logits_diff={logits_diff}"
+    elif has_nan:
+        logging.warning("accuracy check failed (non-strict): output contains NaN")
     elif err != 0 and logits_diff > 0.01:
         logging.warning(
             f"accuracy check failed (non-strict): err={err}, logits_diff={logits_diff}"

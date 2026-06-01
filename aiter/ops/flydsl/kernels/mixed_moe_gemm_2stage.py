@@ -192,6 +192,7 @@ def compile_mixed_moe_gemm1(
 
     mock_gate_only = gate_mode is GateMode.MOCK_GATE_ONLY
     gate_up_interleave = gate_mode is GateMode.INTERLEAVE
+    gate_only = gate_mode is GateMode.GATE_ONLY
 
     # Padding semantics: model_dim and inter_dim INCLUDE padding.
     #   model_dim = model_dim_true + model_dim_pad   (K direction)
@@ -2698,17 +2699,25 @@ def compile_mixed_moe_gemm1(
             allocator_pong.finalize()
             allocator_ping.finalize()
 
+        inter_dim_pad_total = arith.constant(2 * inter_dim_pad, index=True)
+        tile2_pad = 0
+        if const_expr(not gate_only):
+            tile_k_stage2 = 256
+            tile2_pad = tile_k_stage2 - (inter_dim - inter_dim_pad) % tile_k_stage2
+
         inter_in = arith.index_cast(ir.IndexType.get(), i32_inter_in.ir_value())
         tile_n_index = arith.constant(tile_n, index=True)
-        inter_dim_pad_total = arith.constant(2 * inter_dim_pad, index=True)
         if const_expr(mock_gate_only or gate_up_interleave):
-            gx = (inter_in - inter_dim_pad_total + tile_n_index - 1) / tile_n_index
+            gx = (
+                inter_in - inter_dim_pad_total + tile2_pad + tile_n_index - 1
+            ) / tile_n_index
         else:
             gx = (
-                (inter_in - inter_dim_pad_total + 2 * tile_n_index - 1)
+                (inter_in - inter_dim_pad_total + tile2_pad + 2 * tile_n_index - 1)
                 / tile_n_index
                 / arith.constant(2, index=True)
             )
+
         _c_pm_l = arith.constant(persist_m, index=True)
         gy = (
             arith.index_cast(ir.IndexType.get(), i32_size_expert_ids_in.ir_value())
@@ -3986,6 +3995,7 @@ def compile_mixed_moe_gemm2(
                     a1_prefetch=None,
                     b_hi_loader=None,
                     n_scale_shift_p=None,
+                    ku_count=None,
                 ):
                     # n_scale_shift_p overrides body-default `_n_scale_shift_i32`
                     # so the K-outer/N-inner pipeline can apply the right shift
@@ -3995,6 +4005,12 @@ def compile_mixed_moe_gemm2(
                         if n_scale_shift_p is not None
                         else _n_scale_shift_i32
                     )
+                    # PR3117 stage2 NaN fix: restrict the MFMA K-loop to the valid
+                    # `ku` micro-steps. The tail caller passes ku_count=_tail_ku_s2
+                    # so the fully-padded 128-wide ku steps of the final inter_dim
+                    # tile (whose per-1x32 scales are uninitialized) are never fed
+                    # to mfma_scale, eliminating 0*NaN propagation into the output.
+                    _ku_loop = k_unroll if ku_count is None else ku_count
                     if const_expr(b_hi_loader is not None):
                         b_tile_full = [None] * k_unroll
                         for i in range_constexpr(_b_split_ku):
@@ -4098,7 +4114,7 @@ def compile_mixed_moe_gemm2(
                     # Mirrors stage1's pattern (lines ~1410/1438).
                     rocdl.s_setprio(1)
 
-                    for k_idx in range_constexpr(k_unroll):
+                    for k_idx in range_constexpr(_ku_loop):
                         ku128 = k_idx >> _pack_K_shift
                         ikxdl = k_idx & _pack_K_mask
 
@@ -4434,6 +4450,23 @@ def compile_mixed_moe_gemm2(
                 if const_expr(k_main2_py < 0):
                     k_main2_py = 0
 
+                # Stage2 K-pad skip (dropped by the PR3117 rewrite): the final
+                # K-tile spans the padded `inter_dim` tail [inter_dim_valid,
+                # inter_dim).  Each `ku` micro-step covers `tile_k // k_unroll`
+                # (=128) K-elements; the last `inter_dim_pad // 128` of them are
+                # *fully* inside the pad region, where the per-1x32 scales are
+                # uninitialized -> feeding them to mfma_scale yields NaN.  Skip
+                # exactly those fully-padded ku in the tail compute_tile (matches
+                # origin/dev behaviour).  Partially-padded ku keep their valid
+                # scale and contribute 0 from the zero-padded activation.
+                _K_per_ku_s2 = int(tile_k) // int(k_unroll)
+                _pad_ku_skip_s2 = (
+                    min(int(k_unroll), int(inter_dim_pad) // _K_per_ku_s2)
+                    if inter_dim_pad > 0
+                    else 0
+                )
+                _tail_ku_s2 = int(k_unroll) - _pad_ku_skip_s2
+
                 c2_tile_k = arith.constant(tile_k * 2, index=True)
                 b_pong = b_cur
                 # b_pong/b_hi loader uses packed-byte K units (see note above).
@@ -4556,6 +4589,7 @@ def compile_mixed_moe_gemm2(
                         a0_prefetch=a0_prefetch_pong,
                         a1_prefetch=a1_prefetch_pong,
                         prefetch_epilogue=True,
+                        ku_count=_tail_ku_s2,
                         b_hi_loader=(
                             _make_b_hi_loader(k0_pong_bk) if _b_split_enabled else None
                         ),
@@ -4617,6 +4651,7 @@ def compile_mixed_moe_gemm2(
                         a0_prefetch=a0_prefetch_ping,
                         a1_prefetch=a1_prefetch_ping,
                         prefetch_epilogue=True,
+                        ku_count=_tail_ku_s2,
                         b_hi_loader=(
                             _make_b_hi_loader(k_tail1_bk) if _b_split_enabled else None
                         ),
