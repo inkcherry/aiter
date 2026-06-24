@@ -723,6 +723,14 @@ def get_2stage_cfgs(
                 run_1stage = token > 16
             elif q_type != QuantType.per_1x32:
                 run_1stage = token < 256
+            elif (
+                q_type == QuantType.per_1x32
+                and os.environ.get("AITER_FP4_FORCE_1STAGE", "0") == "1"
+            ):
+                # MXFP4 (per_1x32) MoE: upstream never sets run_1stage for per_1x32,
+                # so vLLM falls back to the slow ck_tile 2-stage path. Opt-in to the
+                # asm 1-stage fmoe_g1u1 kernel (matches atom's MXFP4 MoE) for M>16.
+                run_1stage = token > 16
 
         block_m = (
             BLOCK_SIZE_M
