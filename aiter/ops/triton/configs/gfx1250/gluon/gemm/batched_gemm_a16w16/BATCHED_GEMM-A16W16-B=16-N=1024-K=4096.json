@@ -5,7 +5,6 @@
         64,
         128,
         256,
-        2047,
         2048
     ],
     "M_LEQ_16": {
@@ -63,18 +62,7 @@
         "cache_modifier": null,
         "kernel_type": "bandwidth_bound"
     },
-    "M_LEQ_2047": {
-        "BLOCK_SIZE_M": 128,
-        "BLOCK_SIZE_N": 128,
-        "BLOCK_SIZE_K": 128,
-        "num_warps": 4,
-        "NUM_BUFFERS": 3,
-        "waves_per_eu": 1,
-        "NUM_KSPLIT": 1,
-        "cache_modifier": null,
-        "kernel_type": "bandwidth_bound"
-    },
-    "M_LEQ_2048": {
+    "M_GEQ_2048": {
         "BLOCK_SIZE_M": 128,
         "BLOCK_SIZE_N": 128,
         "BLOCK_SIZE_K": 128,

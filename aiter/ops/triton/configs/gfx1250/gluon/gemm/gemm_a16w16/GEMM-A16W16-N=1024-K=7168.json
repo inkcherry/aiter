@@ -3,7 +3,7 @@
         "BLOCK_M": 16,
         "BLOCK_N": 16,
         "BLOCK_K": 512,
-        "NUM_BUFFERS": 7,
+        "NUM_BUFFERS": 4,
         "num_warps": 1,
         "kernel_type": "compute_bound"
     },
@@ -59,7 +59,7 @@
         "BLOCK_M": 64,
         "BLOCK_N": 128,
         "BLOCK_K": 128,
-        "NUM_BUFFERS": 4,
+        "NUM_BUFFERS": 5,
         "num_warps": 4,
         "kernel_type": "compute_bound"
     },
