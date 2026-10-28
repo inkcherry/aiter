@@ -114,6 +114,10 @@ int64_t get_graph_buffer_count(fptr_t _fa);
 void get_graph_buffer_ptrs(fptr_t _fa, int64_t ptrs_out);
 void register_graph_buffers(fptr_t _fa,
                             const std::vector<int64_t>& ptrs_per_rank);
+void get_graph_buffer_ipc_meta(fptr_t _fa, int64_t handle_out, int64_t offset_out);
+void register_graph_buffers_ipc(fptr_t _fa,
+                                const std::vector<int64_t>& handle_ptrs,
+                                const std::vector<int64_t>& offset_ptrs);
 void start_sync_latency(fptr_t _fa, int64_t blocks);
 void end_sync_latency(fptr_t _fa, int64_t blocks);
 void two_sync_latency(fptr_t _fa, int64_t blocks);

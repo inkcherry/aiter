@@ -1469,12 +1469,13 @@ class CustomAllreduce:
         else:
             meta_size = self._meta_size() + max_size * 2
         # Wire the pool's graph helpers to the kernel-matching ops so that
-        # flush_graph_buffers() during capture never reinterpret_casts a gfx1250
-        # `fa` through the old-arch graph ops. Graph-buffer registration itself
-        # stays disabled on gfx1250 (copy-in path → count is always 0).
+        # flush_graph_buffers() after capture never reinterpret_casts a gfx1250
+        # `fa` through the old-arch graph ops.
         pool_kwargs = {}
         if self._is_gfx1250:
             pool_kwargs["graph_count_fn"] = self._ops_get_graph_buffer_count
+            pool_kwargs["graph_ipc_meta_fn"] = ops.get_graph_buffer_ipc_meta_gfx1250
+            pool_kwargs["graph_register_fn"] = ops.register_graph_buffers_gfx1250_ipc
         # Create IPC buffer pool and allocate all named buffers.
         self._pool = IPCBufferPool(self.device, self.group, **pool_kwargs)
         self._pool.create("meta", meta_size, uncached=True)

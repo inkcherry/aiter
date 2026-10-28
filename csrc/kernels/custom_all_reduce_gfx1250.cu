@@ -286,6 +286,30 @@ void register_graph_buffers(fptr_t _fa,
     fa->register_graph_buffers(per_rank.data());
 }
 
+void get_graph_buffer_ipc_meta(fptr_t _fa, int64_t handle_out, int64_t offset_out)
+{
+    auto fa = reinterpret_cast<aiter::CustomAllreduce*>(_fa);
+    auto [handle_bytes, offsets] = fa->get_graph_buffer_ipc_meta();
+    std::memcpy((void*)handle_out, handle_bytes.data(), handle_bytes.size());
+    std::memcpy((void*)offset_out, offsets.data(), offsets.size() * sizeof(int64_t));
+}
+
+void register_graph_buffers_ipc(fptr_t _fa,
+                                const std::vector<int64_t>& handle_ptrs,
+                                const std::vector<int64_t>& offset_ptrs)
+{
+    auto fa = reinterpret_cast<aiter::CustomAllreduce*>(_fa);
+    int world_size = handle_ptrs.size();
+    std::vector<const void*> handles(world_size);
+    std::vector<const int64_t*> offsets(world_size);
+    for(int i = 0; i < world_size; i++)
+    {
+        handles[i] = (const void*)handle_ptrs[i];
+        offsets[i] = (const int64_t*)offset_ptrs[i];
+    }
+    fa->register_graph_buffers(handles.data(), offsets.data());
+}
+
 // ---- Allgather dispatch helpers ----
 
 static void _all_gather(fptr_t _fa, void* inp, void* out,

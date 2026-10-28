@@ -1357,6 +1357,46 @@ public:
         return ptrs;
     }
 
+    // IPC transport: handle of the owning allocation + offset for each
+    // buffer recorded during capture, same layout as get_graph_buffer_ptrs.
+    std::pair<std::vector<uint8_t>, std::vector<int64_t>> get_graph_buffer_ipc_meta()
+    {
+        auto ptrs      = get_graph_buffer_ptrs();
+        auto handle_sz = sizeof(hipIpcMemHandle_t);
+        std::vector<uint8_t> handles(handle_sz * ptrs.size(), 0);
+        std::vector<int64_t> offsets(ptrs.size());
+        for(size_t i = 0; i < ptrs.size(); i++)
+        {
+            void* base_ptr;
+            HIP_CALL(hipPointerGetAttribute(
+                &base_ptr, HIP_POINTER_ATTRIBUTE_RANGE_START_ADDR, (hipDeviceptr_t)ptrs[i]));
+            HIP_CALL(hipIpcGetMemHandle((hipIpcMemHandle_t*)&handles[i * handle_sz], base_ptr));
+            offsets[i] = (char*)ptrs[i] - (char*)base_ptr;
+        }
+        return {handles, offsets};
+    }
+
+    void register_graph_buffers(const void* const* handles_per_rank,
+                                const int64_t* const* offsets_per_rank)
+    {
+        auto num_buffers =
+            graph_unreg_input_buffers_.size() + graph_unreg_output_buffers_.size();
+        std::vector<std::vector<int64_t>> ptrs(world_size_,
+                                               std::vector<int64_t>(num_buffers, 0));
+        std::vector<const int64_t*> ptrs_per_rank(world_size_);
+        for(int j = 0; j < world_size_; j++)
+        {
+            if(j != rank_)
+                for(size_t i = 0; i < num_buffers; i++)
+                    ptrs[j][i] = (int64_t)(open_ipc_handle((const hipIpcMemHandle_t*)
+                                                               handles_per_rank[j] +
+                                                           i) +
+                                           offsets_per_rank[j][i]);
+            ptrs_per_rank[j] = ptrs[j].data();
+        }
+        register_graph_buffers(ptrs_per_rank.data());
+    }
+
     void check_rank_data_capacity(size_t num = 1)
     {
         if(d_rank_data_base_ + num > d_rank_data_end_)
