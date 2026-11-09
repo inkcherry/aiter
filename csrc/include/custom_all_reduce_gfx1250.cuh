@@ -325,30 +325,31 @@ __global__ void __launch_bounds__(512, 1) ar_ll_gfx1250(
     }
 
     // Phase 2: poll my slots for the other ranks, reduce with my own data.
+    // Sum in rank order so every rank rounds identically.
     LLPackedMsg* myBase =
         reinterpret_cast<LLPackedMsg*>(peer_scratch[rank]) + bankOffPkts;
     for(size_t pk = gtid; pk < nPk; pk += stride)
     {
-        PL selfv = *reinterpret_cast<const PL*>(&in[2 * pk]);
-        AL acc;
-#pragma unroll
-        for(int j = 0; j < LP; ++j)
-            acc[j] = upcast_s(selfv[j]);
-
-        for(int r = 1; r < ngpus; ++r)
+        AL acc{};
+        for(int peer = 0; peer < ngpus; ++peer)
         {
-            int                   peer = (rank + r) % ngpus;
-            volatile LLPackedMsg* src  = myBase + (size_t)peer * slot;
-            uint32_t d0, f0, d1, f1;
-            do
+            PL pv;
+            if(peer == rank)
+                pv = *reinterpret_cast<const PL*>(&in[2 * pk]);
+            else
             {
-                ll_load_b128(
-                    reinterpret_cast<const uint32_t*>(const_cast<LLPackedMsg*>(&src[pk])),
-                    d0, f0, d1, f1);
-            } while(f0 != flag || f1 != flag);
+                volatile LLPackedMsg* src = myBase + (size_t)peer * slot;
+                uint32_t d0, f0, d1, f1;
+                do
+                {
+                    ll_load_b128(
+                        reinterpret_cast<const uint32_t*>(const_cast<LLPackedMsg*>(&src[pk])),
+                        d0, f0, d1, f1);
+                } while(f0 != flag || f1 != flag);
 
-            const uint32_t w[2] = {d0, d1};
-            PL             pv   = *reinterpret_cast<const PL*>(w);
+                const uint32_t w[2] = {d0, d1};
+                pv                  = *reinterpret_cast<const PL*>(w);
+            }
 #pragma unroll
             for(int j = 0; j < LP; ++j)
                 acc[j] += upcast_s(pv[j]);
@@ -431,13 +432,11 @@ __global__ void __launch_bounds__(256, 2) ar_gfx1250_naive_unroll4(
     using A                 = typename opus::vector_t<opus::fp32_t, pack_size>;
     int tid    = blockIdx.x * blockDim.x + threadIdx.x;
     int nthds  = blockDim.x * gridDim.x;
+    // Sum in rank order so every rank rounds identically.
     const P* ptrs[ngpus];
 #pragma unroll
     for(int i = 0; i < ngpus; i++)
-    {
-        int target = (rank + i) % ngpus;
-        ptrs[i]    = (const P*)_input_dp->ptrs[target];
-    }
+        ptrs[i] = (const P*)_input_dp->ptrs[i];
     start_sync<ngpus>(sg, self_sg, rank);
     int aligned_size = (size / unroll) * unroll;
     for(int base = tid * unroll; base < aligned_size; base += nthds * unroll)
