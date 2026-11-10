@@ -379,7 +379,7 @@ def _adaptive_moe_sort(
 #     ... + reduce mode (non-EP)                yes        buffer is born in fused_moe_2stages
 #     FLAT 1stage (tuned flat=1/2)              no         kernel needs 8 spare bytes past the rows
 #     adaptive-aux sort (a4w4, atomic)          no         parameter not threaded yet
-#     grouped a4w4/a8w4 (gfx1250)               no         callee has no out param
+#     grouped a4w4/a8w4 (gfx1250)               yes        gather-reduce writes it
 #
 # Not in-place => _return_output copies, so the contract holds either way;
 # only the saving is lost.
@@ -1560,6 +1560,7 @@ def _fused_moe_impl(
             situ_beta=1.0 if beta is None else float(beta),
             situ_linear_beta=1.0 if linear_beta is None else float(linear_beta),
             stage2_scatter=stage2_scatter,
+            output=output,
         )
 
     if grouped_a8w4_out is not None:

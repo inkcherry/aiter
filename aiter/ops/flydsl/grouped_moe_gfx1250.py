@@ -609,6 +609,7 @@ def _grouped_a8w4_tdm_moe(
     situ_beta=1.0,
     situ_linear_beta=1.0,
     a1_scale=None,
+    output=None,
 ):
     import functools
 
@@ -1383,7 +1384,11 @@ def _grouped_a8w4_tdm_moe(
         # MegaMoE ignores its contents and consumes comb_inp instead.
         return torch.empty((token_num, model_dim), dtype=dtype, device=device)
 
-    moe_out = torch.empty((token_num, model_dim), dtype=dtype, device=device)
+    moe_out = (
+        output
+        if output is not None
+        else torch.empty((token_num, model_dim), dtype=dtype, device=device)
+    )
     if _is_ep:
         # Route kernel already produced gather weights (dropped routes zeroed);
         # the dead-tail (tokens >= total_recv) is skipped via num_valid_tokens, and
@@ -1436,6 +1441,7 @@ def grouped_gemm_gfx1250_a8w4(
     situ_linear_beta: float = 1.0,
     stage2_scatter: Stage2ScatterContext | None = None,
     a1_scale: torch.Tensor | None = None,
+    output: torch.Tensor | None = None,
 ):
     """Grouped a8w4/a4w4 MoE on the TDM batched GEMM (gfx1250).
 
@@ -1760,6 +1766,7 @@ def grouped_gemm_gfx1250_a8w4(
             situ_beta=situ_beta,
             situ_linear_beta=situ_linear_beta,
             a1_scale=a1_scale,
+            output=output,
             **_tdm_kw,
         )
 
